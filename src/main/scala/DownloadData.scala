@@ -14,13 +14,14 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
 
 object DownloadData {
   private val LOG = LoggerFactory.getLogger(getClass)
+  private implicit val system: ActorSystem = ActorSystem()
+  private implicit val materializer: ActorMaterializer = ActorMaterializer()
 
   def main(args: Array[String]): Unit = {
-
-
     val conf = new SparkConf()
       .set("spark.driver.host", "127.0.0.1")
       .set("spark.driver.bindAddress", "127.0.0.1")
@@ -52,88 +53,7 @@ object DownloadData {
 
     val rdd: RDD[UserData] = spark.sparkContext
       .parallelize(groupedIds)
-      .flatMap(batchIds => {
-        implicit val system: ActorSystem = ActorSystem()
-        implicit val materializer: ActorMaterializer = ActorMaterializer()
-
-        val http = Http()
-        val strIds = batchIds.mkString(",")
-        val header: HttpHeader = RawHeader("Authorization", broadcast.value)
-        val url = s"https://api.vk.com/method/execute.getUsersData?" +
-          s"v=5.154" +
-          s"&&user_ids=$strIds" +
-          s"&fields=last_seen,city,country"
-        val request = HttpRequest(uri = url).addHeader(header)
-
-        val responseFuture: Future[HttpResponse] = http.singleRequest(request)
-        import UserDataJsonProtocol._
-        val resultFuture: Future[UserDataResponse] = responseFuture.flatMap { response =>
-          if (response.status == StatusCodes.OK) {
-            val responseBody: Future[String] = response.entity.toStrict(5.seconds).map(_.data.utf8String)
-            responseBody.map { result =>
-              LOG.info(s"Response Body: $result")
-              val userDataResponse = result.parseJson.convertTo[UserDataResponse]
-              userDataResponse
-            }
-          } else {
-            LOG.error(s"Request failed with status code ${response.status}")
-            Future.successful(UserDataResponse(UserDataList(Seq.empty, Seq.empty), Seq.empty))
-          }
-        }
-
-        val userDataResponse: UserDataResponse = Await.result(resultFuture, 5.seconds)
-        val userPhotosMap: Map[Int, Seq[Int]] =
-          userDataResponse
-            .response
-            .photos_dates
-            .map(userPhotos => userPhotos.user_id -> userPhotos.photos)
-            .toMap
-
-        val users: List[UserData] =
-          userDataResponse
-            .response
-            .users
-            .map(user => UserData(
-              user.id,
-              if (user.city.isDefined) {
-                Some(City(user.city.get.id, None))
-              } else {
-                None
-              },
-              if (user.country.isDefined) {
-                Some(Country(user.country.get.id, None))
-              } else {
-                None
-              },
-              if (user.first_name.isDefined) {
-                val v = user.first_name.get
-                if (v.isEmpty || v == "DELETED") {
-                  None
-                } else {
-                  Some(v)
-                }
-              } else {
-                None
-              },
-              if (user.last_name.isDefined) {
-                val v = user.last_name.get
-                if (v.isEmpty || v == "DELETED") {
-                  None
-                } else {
-                  Some(v)
-                }
-              } else {
-                None
-              },
-              user.last_seen,
-              user.can_access_closed,
-              user.is_closed,
-              userPhotosMap.get(user.id))
-            )
-            .toList
-
-        users
-      })
+      .flatMap(a => downloadUserData(a, broadcast.value))
 
     val path = conf.get(Config.OUT_PATH_PARAM, Config.OUT_PATH_DEFAULT)
     spark.createDataFrame(rdd)
@@ -142,6 +62,52 @@ object DownloadData {
       .parquet(path)
 
     spark.stop()
+  }
+
+  private val ApiVersion = "5.154"
+  private val RequestTimeout = 5.seconds
+
+  private def downloadUserData(batchIds: Seq[Int], key: String): List[UserData] = {
+    val http = Http()
+    val strIds = batchIds.mkString(",")
+    val header: HttpHeader = RawHeader("Authorization", key)
+    val url = s"https://api.vk.com/method/execute.getUsersData?v=$ApiVersion&user_ids=$strIds&fields=last_seen,city,country"
+    val request = HttpRequest(uri = url).addHeader(header)
+
+    val responseFuture: Future[HttpResponse] = http.singleRequest(request)
+    import UserDataJsonProtocol._
+
+    val resultFuture: Future[UserDataResponse] = responseFuture.flatMap { response =>
+      if (response.status == StatusCodes.OK) {
+        val responseBody: Future[String] = response.entity.toStrict(RequestTimeout).map(_.data.utf8String)
+        responseBody.map { result =>
+          LOG.info(s"Response Body: $result")
+          result.parseJson.convertTo[UserDataResponse]
+        }
+      } else {
+        LOG.error(s"Request failed with status code ${response.status}")
+        Future.successful(UserDataResponse(UserDataList(Seq.empty, Seq.empty), Seq.empty))
+      }
+    }
+
+    Try(Await.result(resultFuture, RequestTimeout)) match {
+      case Success(userDataResponse) =>
+        val userPhotosMap: Map[Int, Seq[Int]] = userDataResponse.response.photos_dates.map(userPhotos => userPhotos.user_id -> userPhotos.photos).toMap
+        userDataResponse.response.users.flatMap { user =>
+          for {
+            city <- user.city.map(c => City(c.id, None))
+            country <- user.country.map(c => Country(c.id, None))
+            firstName <- Option(user.first_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED")
+            lastName <- Option(user.last_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED")
+          } yield {
+            UserData(user.id, Some(city), Some(country), Some(firstName), Some(lastName), user.last_seen, user.can_access_closed, user.is_closed, userPhotosMap.get(user.id))
+          }
+        }.toList
+
+      case Failure(ex) =>
+        LOG.error("Failed to fetch user data", ex)
+        List.empty
+    }
   }
 
 
