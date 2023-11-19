@@ -59,14 +59,17 @@ object DownloadData {
         val http = Http()
         val strIds = batchIds.mkString(",")
         val header: HttpHeader = RawHeader("Authorization", broadcast.value)
-        val url = s"https://api.vk.com/method/execute.getUsersData?v=5.154&&user_ids=$strIds&fields=last_seen,city,country"
+        val url = s"https://api.vk.com/method/execute.getUsersData?" +
+          s"v=5.154" +
+          s"&&user_ids=$strIds" +
+          s"&fields=last_seen,city,country"
         val request = HttpRequest(uri = url).addHeader(header)
 
         val responseFuture: Future[HttpResponse] = http.singleRequest(request)
         import UserDataJsonProtocol._
         val resultFuture: Future[UserDataResponse] = responseFuture.flatMap { response =>
           if (response.status == StatusCodes.OK) {
-            val responseBody: Future[String] = response.entity.toStrict(1.seconds).map(_.data.utf8String)
+            val responseBody: Future[String] = response.entity.toStrict(5.seconds).map(_.data.utf8String)
             responseBody.map { result =>
               LOG.info(s"Response Body: $result")
               val userDataResponse = result.parseJson.convertTo[UserDataResponse]
@@ -78,7 +81,7 @@ object DownloadData {
           }
         }
 
-        val userDataResponse: UserDataResponse = Await.result(resultFuture, 1.seconds)
+        val userDataResponse: UserDataResponse = Await.result(resultFuture, 5.seconds)
         val userPhotosMap: Map[Int, Seq[Int]] =
           userDataResponse
             .response
@@ -132,11 +135,11 @@ object DownloadData {
         users
       })
 
-
+    val path = conf.get(Config.OUT_PATH_PARAM, Config.OUT_PATH_DEFAULT)
     spark.createDataFrame(rdd)
       .coalesce(1)
       .write
-      .parquet("gqnms3")
+      .parquet(path)
 
     spark.stop()
   }
@@ -150,7 +153,7 @@ object DownloadData {
     val FINISH_ID_DEFAULT: Int = 24
 
     val VK_TOKEN_ID_PARAM: String = "vk.token.id"
-    val VK_TOKEN_ID_DEFAULT: String = "Bearer 029fbd2a029fbd2a029fbd2a23018a4aa00029f029fbd2a67b46f7e5929e3d48386dae3"
+    val VK_TOKEN_ID_DEFAULT: String = "{your_token}"
 
     val BATCH_SIZE_PARAM: String = "scan.batch.size"
     val BATCH_SIZE_DEFAULT: Int = 24
@@ -159,7 +162,7 @@ object DownloadData {
     val COUNT_CORES_DEFAULT: Int = Runtime.getRuntime.availableProcessors()
 
     val OUT_PATH_PARAM: String = "path.data.users"
-    val OUT_PATH_DEFAULT: String = "/user/hduser/spark/data_users"
+    val OUT_PATH_DEFAULT: String = f"data_${START_ID_DEFAULT}_${FINISH_ID_DEFAULT}"
 
   }
 }
