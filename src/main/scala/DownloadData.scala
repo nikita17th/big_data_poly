@@ -3,6 +3,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.model.{HttpHeader, HttpRequest, HttpResponse, StatusCodes}
 import akka.stream.ActorMaterializer
+import ch.qos.logback.classic.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
@@ -30,7 +31,8 @@ object DownloadData {
       .set("spark.ui.enabled", "true")
       .set("spark.executor.memory", "8g")
       .set("spark.executor.instances", "1")
-
+      .set("spark.driver.extraJavaOptions", " -XX:+UseG1GC")
+      .set("spark.executor.extraJavaOptions", " -XX:+UseG1GC")
 
     val coresExecutor: Int = conf.getInt(Config.COUNT_CORES_PARAM, Config.COUNT_CORES_DEFAULT)
     conf.set("spark.executor.cores", f"$coresExecutor")
@@ -81,7 +83,6 @@ object DownloadData {
       if (response.status == StatusCodes.OK) {
         val responseBody: Future[String] = response.entity.toStrict(RequestTimeout).map(_.data.utf8String)
         responseBody.map { result =>
-          LOG.info(s"Response Body: $result")
           result.parseJson.convertTo[UserDataResponse]
         }
       } else {
@@ -92,18 +93,35 @@ object DownloadData {
 
     Try(Await.result(resultFuture, RequestTimeout)) match {
       case Success(userDataResponse) =>
-        val userPhotosMap: Map[Int, Seq[Int]] = userDataResponse.response.photos_dates.map(userPhotos => userPhotos.user_id -> userPhotos.photos).toMap
+        val userPhotosMap: Map[Int, Seq[Int]] = userDataResponse
+          .response
+          .photos_dates
+          .map(userPhotos => userPhotos.user_id -> userPhotos.photos)
+          .toMap
+
+        LOG.info(userDataResponse.response.users.toString())
+
         userDataResponse.response.users.flatMap { user =>
           for {
-            city <- user.city.map(c => City(c.id, None))
-            country <- user.country.map(c => Country(c.id, None))
-            firstName <- Option(user.first_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED")
-            lastName <- Option(user.last_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED")
+            city <- Option(user.city.map(c => City(c.id, None)))
+            country <- Option(user.country.map(c => Country(c.id, None)))
+            firstName <- Option(Option(user.first_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
+            lastName <- Option(Option(user.last_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
           } yield {
-            UserData(user.id, Some(city), Some(country), Some(firstName), Some(lastName), user.last_seen, user.can_access_closed, user.is_closed, userPhotosMap.get(user.id))
+            UserData(
+              user.id,
+              city,
+              country,
+              firstName,
+              lastName,
+              user.last_seen,
+              user.can_access_closed,
+              user.is_closed,
+              userPhotosMap.get(user.id),
+              user.deactivated
+            )
           }
         }.toList
-
       case Failure(ex) =>
         LOG.error("Failed to fetch user data", ex)
         List.empty
@@ -116,10 +134,10 @@ object DownloadData {
     val START_ID_DEFAULT: Int = 1
 
     val FINISH_ID_PARAM: String = "scan.users.vk.id"
-    val FINISH_ID_DEFAULT: Int = 24
+    val FINISH_ID_DEFAULT: Int = 1000
 
     val VK_TOKEN_ID_PARAM: String = "vk.token.id"
-    val VK_TOKEN_ID_DEFAULT: String = "{your_token}"
+    val VK_TOKEN_ID_DEFAULT: String = "Bearer {your_token}"
 
     val BATCH_SIZE_PARAM: String = "scan.batch.size"
     val BATCH_SIZE_DEFAULT: Int = 24
@@ -128,7 +146,21 @@ object DownloadData {
     val COUNT_CORES_DEFAULT: Int = Runtime.getRuntime.availableProcessors()
 
     val OUT_PATH_PARAM: String = "path.data.users"
-    val OUT_PATH_DEFAULT: String = f"data_${START_ID_DEFAULT}_${FINISH_ID_DEFAULT}"
+    val OUT_PATH_DEFAULT: String = f"data_${START_ID_DEFAULT}_${FINISH_ID_DEFAULT}_${System.currentTimeMillis()}"
 
   }
+
+  private def configureLogger(name: String): Unit = {
+    val logger = LoggerFactory.getLogger(name).asInstanceOf[Logger]
+    logger.setLevel(Level.INFO)
+    logger.setAdditive(false)
+  }
+
+  Seq(
+    "org.apache.parquet.io.MessageColumnIO",
+    "org.apache.parquet.io.RecordConsumerLoggingWrapper",
+    "org.apache.parquet.bytes.CapacityByteArrayOutputStream",
+    "org.spark_project.jetty"
+  ).foreach(configureLogger)
+
 }
