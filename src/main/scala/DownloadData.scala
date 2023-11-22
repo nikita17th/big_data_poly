@@ -43,25 +43,41 @@ object DownloadData {
       .master("local[*]")
       .config(conf)
       .getOrCreate()
+    val sc = spark.sparkContext
 
     val startId: Int = conf.getInt(Config.START_ID_PARAM, Config.START_ID_DEFAULT)
     val finishId = conf.getInt(Config.FINISH_ID_PARAM, Config.FINISH_ID_DEFAULT)
-    val batchSize = conf.getInt(Config.BATCH_SIZE_PARAM, Config.BATCH_SIZE_DEFAULT)
+    val batchVkIdSize = conf.getInt(Config.BATCH_SIZE_VK_IDS_PARAM, Config.BATCH_SIZE_VK_IDS_DEFAULT)
     val vk_token: String = conf.get(Config.VK_TOKEN_ID_PARAM, Config.VK_TOKEN_ID_DEFAULT)
+    val outputPath = conf.get(Config.OUT_PATH_PARAM, Config.OUT_PATH_DEFAULT)
+    val batchSize: Int = conf.getInt(Config.BATCH_SIZE_PARAM, Config.CHECKPOINT_INTERVAL_DEFAULT)
 
     val broadcast: Broadcast[String] = spark.sparkContext.broadcast(vk_token)
     val ids = startId to finishId
-    val groupedIds = ids.grouped(batchSize).toSeq
+    val groupedIds = ids.grouped(batchVkIdSize).toSeq
+    val gropedBatches = groupedIds.grouped(batchSize).toSeq
 
-    val rdd: RDD[UserData] = spark.sparkContext
-      .parallelize(groupedIds)
-      .flatMap(a => downloadUserData(a, broadcast.value))
 
-    val path = conf.get(Config.OUT_PATH_PARAM, Config.OUT_PATH_DEFAULT)
-    spark.createDataFrame(rdd)
+    var counter = 0
+    for (batch <- gropedBatches) {
+      val rdd: RDD[UserData] = sc.parallelize(batch)
+        .flatMap(ids => downloadUserData(ids, broadcast.value))
+
+      spark.createDataFrame(rdd)
+        .coalesce(1)
+        .write
+        .parquet(f"data_batch_${startId + counter * batchVkIdSize}" +
+          f"_${math.min(startId + (counter + batchSize) * batchVkIdSize, finishId)}" +
+          f"_${System.currentTimeMillis()}")
+      counter += batchSize
+    }
+
+    spark
+      .read
+      .parquet(f"data_batch_*_*_*")
       .coalesce(1)
       .write
-      .parquet(path)
+      .parquet(outputPath)
 
     spark.stop()
   }
@@ -99,8 +115,6 @@ object DownloadData {
           .map(userPhotos => userPhotos.user_id -> userPhotos.photos)
           .toMap
 
-        LOG.info(userDataResponse.response.users.toString())
-
         userDataResponse.response.users.flatMap { user =>
           for {
             city <- Option(user.city.map(c => City(c.id, None)))
@@ -134,19 +148,22 @@ object DownloadData {
     val START_ID_DEFAULT: Int = 1
 
     val FINISH_ID_PARAM: String = "scan.users.vk.id"
-    val FINISH_ID_DEFAULT: Int = 1000
+    val FINISH_ID_DEFAULT: Int = 1000000
 
     val VK_TOKEN_ID_PARAM: String = "vk.token.id"
     val VK_TOKEN_ID_DEFAULT: String = "Bearer {your_token}"
 
-    val BATCH_SIZE_PARAM: String = "scan.batch.size"
-    val BATCH_SIZE_DEFAULT: Int = 24
+    val BATCH_SIZE_VK_IDS_PARAM: String = "scan.batch.size.vk.id"
+    val BATCH_SIZE_VK_IDS_DEFAULT: Int = 24
 
     val COUNT_CORES_PARAM: String = "count.cores"
     val COUNT_CORES_DEFAULT: Int = Runtime.getRuntime.availableProcessors()
 
     val OUT_PATH_PARAM: String = "path.data.users"
     val OUT_PATH_DEFAULT: String = f"data_${START_ID_DEFAULT}_${FINISH_ID_DEFAULT}_${System.currentTimeMillis()}"
+
+    val BATCH_SIZE_PARAM: String = "scan.batch.size";
+    val CHECKPOINT_INTERVAL_DEFAULT: Integer = 416
 
   }
 
@@ -157,10 +174,10 @@ object DownloadData {
   }
 
   Seq(
-    "org.apache.parquet.io.MessageColumnIO",
-    "org.apache.parquet.io.RecordConsumerLoggingWrapper",
-    "org.apache.parquet.bytes.CapacityByteArrayOutputStream",
-    "org.spark_project.jetty"
+    "org.spark_project.jetty",
+    "org.apache.hadoop",
+    "org.apache.spark",
+    "io.netty"
   ).foreach(configureLogger)
 
 }
