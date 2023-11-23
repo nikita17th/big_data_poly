@@ -66,7 +66,7 @@ object DownloadData {
       spark.createDataFrame(rdd)
         .coalesce(1)
         .write
-        .parquet(f"data_batch_${startId + counter * batchVkIdSize}" +
+        .parquet(f"batches/data_batch_${startId + counter * batchVkIdSize}" +
           f"_${math.min(startId + (counter + batchSize) * batchVkIdSize, finishId)}" +
           f"_${System.currentTimeMillis()}")
       counter += batchSize
@@ -74,7 +74,7 @@ object DownloadData {
 
     spark
       .read
-      .parquet(f"data_batch_*_*_*")
+      .parquet(f"batches/data_batch_*_*_*")
       .coalesce(1)
       .write
       .parquet(outputPath)
