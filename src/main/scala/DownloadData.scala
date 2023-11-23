@@ -70,7 +70,9 @@ object DownloadData {
         .parquet(f"$batchDir/data_batch_${startId + counter * batchVkIdSize}" +
           f"_${math.min(startId + (counter + batchSize) * batchVkIdSize, finishId)}" +
           f"_${System.currentTimeMillis()}")
+
       counter += batchSize
+      LOG.info(f"Processed: ${math.min(startId + counter * batchVkIdSize, finishId)} ids")
     }
 
     spark
@@ -80,6 +82,7 @@ object DownloadData {
       .write
       .parquet(outputPath)
 
+    LOG.info(f"Finish all: $finishId ids")
     spark.stop()
   }
 
@@ -87,6 +90,7 @@ object DownloadData {
   private val RequestTimeout = 5.seconds
 
   private def downloadUserData(batchIds: Seq[Int], key: String): List[UserData] = {
+    Thread.sleep(200)
     val http = Http()
     val strIds = batchIds.mkString(",")
     val header: HttpHeader = RawHeader("Authorization", key)
@@ -177,6 +181,7 @@ object DownloadData {
   Seq(
     "org.spark_project.jetty",
     "org.apache.hadoop",
+    "org.apache.spark",
     "org.apache.parquet",
     "io.netty"
   ).foreach(configureLogger)
