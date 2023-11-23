@@ -50,7 +50,8 @@ object DownloadData {
     val batchVkIdSize = conf.getInt(Config.BATCH_SIZE_VK_IDS_PARAM, Config.BATCH_SIZE_VK_IDS_DEFAULT)
     val vk_token: String = conf.get(Config.VK_TOKEN_ID_PARAM, Config.VK_TOKEN_ID_DEFAULT)
     val outputPath = conf.get(Config.OUT_PATH_PARAM, Config.OUT_PATH_DEFAULT)
-    val batchSize: Int = conf.getInt(Config.BATCH_SIZE_PARAM, Config.CHECKPOINT_INTERVAL_DEFAULT)
+    val batchSize: Int = conf.getInt(Config.BATCH_SIZE_PARAM, Config.BATCH_SIZE_DEFAULT)
+    val batchDir: String = f"batches_${System.currentTimeMillis()}"
 
     val broadcast: Broadcast[String] = spark.sparkContext.broadcast(vk_token)
     val ids = startId to finishId
@@ -66,7 +67,7 @@ object DownloadData {
       spark.createDataFrame(rdd)
         .coalesce(1)
         .write
-        .parquet(f"batches/data_batch_${startId + counter * batchVkIdSize}" +
+        .parquet(f"$batchDir/data_batch_${startId + counter * batchVkIdSize}" +
           f"_${math.min(startId + (counter + batchSize) * batchVkIdSize, finishId)}" +
           f"_${System.currentTimeMillis()}")
       counter += batchSize
@@ -74,7 +75,7 @@ object DownloadData {
 
     spark
       .read
-      .parquet(f"batches/data_batch_*_*_*")
+      .parquet(f"$batchDir/data_batch_*_*_*")
       .coalesce(1)
       .write
       .parquet(outputPath)
@@ -151,7 +152,7 @@ object DownloadData {
     val FINISH_ID_DEFAULT: Int = 1000000
 
     val VK_TOKEN_ID_PARAM: String = "vk.token.id"
-    val VK_TOKEN_ID_DEFAULT: String = "Bearer c639f641c639f641c639f64148c52fafb2cc639c639f641a363e5166998c797ce5c1996"
+    val VK_TOKEN_ID_DEFAULT: String = "Bearer your_token"
 
     val BATCH_SIZE_VK_IDS_PARAM: String = "scan.batch.size.vk.id"
     val BATCH_SIZE_VK_IDS_DEFAULT: Int = 24
@@ -162,8 +163,8 @@ object DownloadData {
     val OUT_PATH_PARAM: String = "path.data.users"
     val OUT_PATH_DEFAULT: String = f"data_${START_ID_DEFAULT}_${FINISH_ID_DEFAULT}_${System.currentTimeMillis()}"
 
-    val BATCH_SIZE_PARAM: String = "scan.batch.size";
-    val CHECKPOINT_INTERVAL_DEFAULT: Integer = 416
+    val BATCH_SIZE_PARAM: String = "scan.batch.size"
+    val BATCH_SIZE_DEFAULT: Integer = 416
 
   }
 
@@ -176,7 +177,6 @@ object DownloadData {
   Seq(
     "org.spark_project.jetty",
     "org.apache.hadoop",
-    "org.apache.spark",
     "org.apache.parquet",
     "io.netty"
   ).foreach(configureLogger)
