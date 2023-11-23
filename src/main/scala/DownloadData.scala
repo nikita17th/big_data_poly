@@ -82,7 +82,7 @@ object DownloadData {
     spark.stop()
   }
 
-  private val ApiVersion = "5.154"
+  private val ApiVersion = "5.199"
   private val RequestTimeout = 5.seconds
 
   private def downloadUserData(batchIds: Seq[Int], key: String): List[UserData] = {
@@ -151,7 +151,7 @@ object DownloadData {
     val FINISH_ID_DEFAULT: Int = 1000000
 
     val VK_TOKEN_ID_PARAM: String = "vk.token.id"
-    val VK_TOKEN_ID_DEFAULT: String = "Bearer {your_token}"
+    val VK_TOKEN_ID_DEFAULT: String = "Bearer c639f641c639f641c639f64148c52fafb2cc639c639f641a363e5166998c797ce5c1996"
 
     val BATCH_SIZE_VK_IDS_PARAM: String = "scan.batch.size.vk.id"
     val BATCH_SIZE_VK_IDS_DEFAULT: Int = 24
@@ -177,6 +177,7 @@ object DownloadData {
     "org.spark_project.jetty",
     "org.apache.hadoop",
     "org.apache.spark",
+    "org.apache.parquet",
     "io.netty"
   ).foreach(configureLogger)
 
