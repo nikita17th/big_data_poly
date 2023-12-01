@@ -32,15 +32,15 @@
 
     <property>
         <name>yarn.nodemanager.resource.memory-mb</name>
-        <value>4096</value>  <!-- default: -1 -->
-    </property>
-    <property>
-        <name>yarn.scheduler.minimum-allocation-mb</name>
-        <value>1024</value>  <!-- default: 1024 -->
+        <value>10240</value>  <!-- default: -1 -->
     </property>
     <property>
         <name>yarn.scheduler.maximum-allocation-mb</name>
-        <value>2048</value>  <!-- default: 8192 -->
+        <value>10240</value>  <!-- default: 8192 -->
+    </property>
+    <property>
+        <name>yarn.scheduler.maximum-allocation-vcores</name>
+        <value>8</value>  <!-- default: 4 -->
     </property>
 
 </configuration>
