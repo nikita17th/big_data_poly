@@ -122,36 +122,45 @@ object DownloadData {
     import UserDataJsonProtocol._
 
     bodies.map(body => {
-      body.parseJson.convertTo[UserDataResponse]
-    }).flatMap(userDataResponse => {
-      val userPhotosMap: Map[Int, Seq[Int]] = userDataResponse
-        .response
-        .photos_dates
-        .map(userPhotos => userPhotos.user_id -> userPhotos.photos)
-        .toMap
-
-      userDataResponse.response.users.flatMap { user =>
-        for {
-          city <- Option(user.city.map(c => City(c.id, None)))
-          country <- Option(user.country.map(c => Country(c.id, None)))
-          firstName <- Option(Option(user.first_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
-          lastName <- Option(Option(user.last_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
-        } yield {
-          UserData(
-            user.id,
-            city,
-            country,
-            firstName,
-            lastName,
-            user.last_seen,
-            user.can_access_closed,
-            user.is_closed,
-            userPhotosMap.get(user.id),
-            user.deactivated
-          )
+        try {
+          Option(body.parseJson.convertTo[UserDataResponse])
+        } catch {
+          case ex: Exception =>
+            LOG.error(f"Body: $body, error: ${ex.getMessage}")
+            Option.empty
         }
-      }.toList
-    })
+      })
+      .filter(option => option.isDefined)
+      .map(option => option.get)
+      .flatMap(userDataResponse => {
+        val userPhotosMap: Map[Int, Seq[Int]] = userDataResponse
+          .response
+          .photos_dates
+          .map(userPhotos => userPhotos.user_id -> userPhotos.photos)
+          .toMap
+
+        userDataResponse.response.users.flatMap { user =>
+          for {
+            city <- Option(user.city.map(c => City(c.id, None)))
+            country <- Option(user.country.map(c => Country(c.id, None)))
+            firstName <- Option(Option(user.first_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
+            lastName <- Option(Option(user.last_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
+          } yield {
+            UserData(
+              user.id,
+              city,
+              country,
+              firstName,
+              lastName,
+              user.last_seen,
+              user.can_access_closed,
+              user.is_closed,
+              userPhotosMap.get(user.id),
+              user.deactivated
+            )
+          }
+        }.toList
+      })
   }
 
 }
