@@ -9,11 +9,8 @@ import spray.json._
 
 import java.io.FileInputStream
 import java.util.Properties
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.reflect.io.File
-import scala.util.{Failure, Success, Try}
 
 object DownloadData {
   private val LOG = LoggerFactory.getLogger(getClass)
@@ -66,18 +63,20 @@ object DownloadData {
     for (batch <- gropedBatches) {
       val rdd: RDD[UserData] = sc.makeRDD(batch, numSlices = config.vkTokens.size)
         .mapPartitionsWithIndex { (partitionIndex, part) =>
-
           val httpWorker = new HttpWorker(config.requestTimeout,
             config.maxRetries,
             config.rateLimit,
             config.rateLimitDuration)
 
-          part
-            .flatMap(ids => downloadUserData(ids,
-              config.vkTokens(partitionIndex),
-              httpWorker,
-              config.apiVersion)
-            )
+          val urls = part.map(batchIds => {
+            val strIds = batchIds.mkString(",")
+            s"https://api.vk.com/method/execute.getUsersData?v=${config.apiVersion}&user_ids=$strIds&fields=last_seen,city,country"
+          }).toList
+
+          downloadUserData(urls,
+            config.vkTokens(partitionIndex),
+            httpWorker
+          ).iterator
         }
 
       spark.createDataFrame(rdd)
@@ -113,60 +112,46 @@ object DownloadData {
   }
 
 
-  private def downloadUserData(batchIds: Seq[Int],
+  private def downloadUserData(urls: List[String],
                                key: String,
-                               httpWorker: HttpWorker,
-                               apiVersion: String
+                               httpWorker: HttpWorker
                               ): List[UserData] = {
-    val strIds = batchIds.mkString(",")
-    val header: HttpHeader = RawHeader("Authorization", key)
-    val url = s"https://api.vk.com/method/execute.getUsersData?v=$apiVersion&user_ids=$strIds&fields=last_seen,city,country"
 
-    val responseBody: Future[String] = httpWorker.makeRequest(url, header)
+    val header: HttpHeader = RawHeader("Authorization", key)
+    val bodies: List[String] = httpWorker.makeRequest(urls, header)
     import UserDataJsonProtocol._
 
-    val resultFuture: Future[UserDataResponse] =
-      responseBody.map { result =>
-        result.parseJson.convertTo[UserDataResponse]
-      }.recover { case ex: Throwable =>
-        LOG.error(s"Request failed: ${ex.getMessage}")
-        UserDataResponse(UserDataList(Seq.empty, Seq.empty), Seq.empty)
-      }
+    bodies.map(body => {
+      body.parseJson.convertTo[UserDataResponse]
+    }).flatMap(userDataResponse => {
+      val userPhotosMap: Map[Int, Seq[Int]] = userDataResponse
+        .response
+        .photos_dates
+        .map(userPhotos => userPhotos.user_id -> userPhotos.photos)
+        .toMap
 
-
-    Try(Await.result(resultFuture, httpWorker.requestTimeout * httpWorker.maxRetries)) match {
-      case Success(userDataResponse) =>
-        val userPhotosMap: Map[Int, Seq[Int]] = userDataResponse
-          .response
-          .photos_dates
-          .map(userPhotos => userPhotos.user_id -> userPhotos.photos)
-          .toMap
-
-        userDataResponse.response.users.flatMap { user =>
-          for {
-            city <- Option(user.city.map(c => City(c.id, None)))
-            country <- Option(user.country.map(c => Country(c.id, None)))
-            firstName <- Option(Option(user.first_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
-            lastName <- Option(Option(user.last_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
-          } yield {
-            UserData(
-              user.id,
-              city,
-              country,
-              firstName,
-              lastName,
-              user.last_seen,
-              user.can_access_closed,
-              user.is_closed,
-              userPhotosMap.get(user.id),
-              user.deactivated
-            )
-          }
-        }.toList
-      case Failure(ex) =>
-        LOG.error("Failed to fetch user data", ex)
-        List.empty
-    }
+      userDataResponse.response.users.flatMap { user =>
+        for {
+          city <- Option(user.city.map(c => City(c.id, None)))
+          country <- Option(user.country.map(c => Country(c.id, None)))
+          firstName <- Option(Option(user.first_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
+          lastName <- Option(Option(user.last_name.getOrElse("")).filterNot(_.isEmpty).filterNot(_ == "DELETED"))
+        } yield {
+          UserData(
+            user.id,
+            city,
+            country,
+            firstName,
+            lastName,
+            user.last_seen,
+            user.can_access_closed,
+            user.is_closed,
+            userPhotosMap.get(user.id),
+            user.deactivated
+          )
+        }
+      }.toList
+    })
   }
 
 }
