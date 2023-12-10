@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 # prepare system
-ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-arm64
 
 RUN apt-get update -y && \
     apt-get install -y \
