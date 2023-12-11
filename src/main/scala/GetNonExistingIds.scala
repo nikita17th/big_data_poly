@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 
 import java.io.{FileInputStream, PrintWriter}
 import java.util.Properties
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.io.File
 
 object GetNonExistingIds {
@@ -43,10 +44,8 @@ object GetNonExistingIds {
       .config(conf)
       .getOrCreate()
     LOG.info(f"${config.nonExistingSourceDir}")
-
     val jopa: Array[Boolean] = new Array[Boolean](config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1)
-//    val allIds = config.nonExistingSourceStartId to config.nonExistingSourceEndId
-//    23:21:45
+
     spark
       .read
       .parquet(f"${config.nonExistingSourceDir}")
@@ -55,19 +54,22 @@ object GetNonExistingIds {
       .map(_.getInt(0))
       .foreach(id => {
         jopa(id - config.nonExistingSourceStartId) = true
-//        LOG.info(f"$id ${jopa(id - config.nonExistingSourceStartId)}")
       })
 
-    val output = new PrintWriter(new java.io.File(f"non-existing_${config.startTime}.txt"))
+    val collection = ArrayBuffer[Int]()
     var i = 0
     var counter = 0
     while (i < config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1) {
       if (!jopa(i)) {
         counter += 1
-        output.println(i + config.nonExistingSourceStartId)
+        collection += (i + config.nonExistingSourceStartId)
       }
       i += 1
     }
+
+    spark.sparkContext.makeRDD(collection, 1)
+      .saveAsTextFile(f"non-existing_${config.startTime}")
+
     LOG.error(f"PIZDEZ RAZMEROM S: $counter")
     LOG.error(f"${config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1 - counter}")
   }
