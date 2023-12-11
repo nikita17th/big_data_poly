@@ -2,11 +2,11 @@ import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.slf4j.LoggerFactory
 
-import java.io.FileInputStream
+import java.io.{FileInputStream, PrintWriter}
 import java.util.Properties
 import scala.reflect.io.File
 
-object Aggregate {
+object GetNonExistingIds {
   private val LOG = LoggerFactory.getLogger(getClass)
 
   def main(args: Array[String]): Unit = {
@@ -41,15 +41,25 @@ object Aggregate {
     }
 
     val spark: SparkSession = SparkSession.builder()
-      .appName("Aggregate data to one file")
+      .appName(f"Get ids not in range ${config.nonExistingSourceStartId} to ${config.nonExistingSourceEndId}")
       .config(conf)
       .getOrCreate()
 
-    spark
+    val allIds = (config.nonExistingSourceStartId to config.nonExistingSourceEndId).toSet
+
+    val idsFromSources = spark
       .read
-      .parquet(f"${config.aggregationSourceDir}")
-      .repartition(32)
-      .write
-      .parquet(f"data_0_0_${config.startTime}")
+      .parquet(f"${config.nonExistingSourceDir}")
+      .select("id")
+      .collect()
+      .map(_.getInt(0))
+      .toSet
+
+    val nonExistingIds = allIds diff idsFromSources
+    LOG.info(f"Found $nonExistingIds non-existing ids")
+    val result = nonExistingIds.mkString("", ",", "")
+    val output = new PrintWriter(new java.io.File(f"non-existing_${config.startTime}.txt"))
+    output.println(result)
+    output.close()
   }
 }
