@@ -1,3 +1,4 @@
+import ch.qos.logback.classic.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.slf4j.LoggerFactory
@@ -36,30 +37,38 @@ object GetNonExistingIds {
         .set("spark.driver.extraJavaOptions", " -XX:+UseG1GC")
         .set("spark.executor.extraJavaOptions", " -XX:+UseG1GC")
     }
-    if (config.vkTokens.size > conf.getInt("spark.executor.instances", 1)) {
-      conf.set("spark.executor.instances", config.vkTokens.size.toString)
-    }
 
     val spark: SparkSession = SparkSession.builder()
       .appName(f"Get ids not in range ${config.nonExistingSourceStartId} to ${config.nonExistingSourceEndId}")
       .config(conf)
       .getOrCreate()
+    LOG.info(f"${config.nonExistingSourceDir}")
 
-    val allIds = (config.nonExistingSourceStartId to config.nonExistingSourceEndId).toSet
-
-    val idsFromSources = spark
+    val jopa: Array[Boolean] = new Array[Boolean](config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1)
+//    val allIds = config.nonExistingSourceStartId to config.nonExistingSourceEndId
+//    23:21:45
+    spark
       .read
       .parquet(f"${config.nonExistingSourceDir}")
       .select("id")
       .collect()
       .map(_.getInt(0))
-      .toSet
+      .foreach(id => {
+        jopa(id - config.nonExistingSourceStartId) = true
+//        LOG.info(f"$id ${jopa(id - config.nonExistingSourceStartId)}")
+      })
 
-    val nonExistingIds = allIds diff idsFromSources
-    LOG.info(f"Found $nonExistingIds non-existing ids")
-    val result = nonExistingIds.mkString("", ",", "")
     val output = new PrintWriter(new java.io.File(f"non-existing_${config.startTime}.txt"))
-    output.println(result)
-    output.close()
+    var i = 0
+    var counter = 0
+    while (i < config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1) {
+      if (!jopa(i)) {
+        counter += 1
+        output.println(i + config.nonExistingSourceStartId)
+      }
+      i += 1
+    }
+    LOG.error(f"PIZDEZ RAZMEROM S: $counter")
+    LOG.error(f"${config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1 - counter}")
   }
 }
