@@ -12,7 +12,8 @@ case class Config(startId: Int,
                   aggregationSourceDir: String,
                   nonExistingSourceDir: String,
                   nonExistingSourceStartId: Int,
-                  nonExistingSourceEndId: Int
+                  nonExistingSourceEndId: Int,
+                  pathToFileWithIds: String
                  ) extends Serializable {
   val startTime: Long = System.currentTimeMillis()
   val apiVersion: String = "5.199"
@@ -52,6 +53,9 @@ object Config {
   private val NON_EXISTING_SOURCE_END_PARAM: String = "non-existing.source.end.id"
   private val NON_EXISTING_SOURCE_END_DEFAULT: String = "837015103"
 
+  private val PATH_TO_FILE_IDS_PARAM: String = "download.data.from.file.name.file.ids"
+  private val PATH_TO_FILE_IDS_DEFAULT: String = "file_ids"
+
   def create(properties: Properties): Config = {
     val startId: Int = properties.getProperty(Config.START_ID_PARAM).toInt
     val finishId = startId + properties.getProperty(Config.COUNT_ID_PARAM).toInt
@@ -72,6 +76,7 @@ object Config {
     val nonExistingSourceDir: String = properties.getProperty(Config.NON_EXISTING_SOURCE_DIR_PARAM, Config.NON_EXISTING_SOURCE_DIR_DEFAULT)
     val nonExistingSourceStartId: Int = properties.getProperty(Config.NON_EXISTING_SOURCE_START_PARAM, Config.NON_EXISTING_SOURCE_START_DEFAULT).toInt
     val nonExistingSourceEndId: Int = properties.getProperty(Config.NON_EXISTING_SOURCE_END_PARAM, Config.NON_EXISTING_SOURCE_END_DEFAULT).toInt
+    val pathToFileWithIds: String = properties.getProperty(Config.PATH_TO_FILE_IDS_PARAM, Config.PATH_TO_FILE_IDS_DEFAULT)
 
     Config(startId,
       finishId,
@@ -83,7 +88,8 @@ object Config {
       aggregationSourceDir,
       nonExistingSourceDir,
       nonExistingSourceStartId,
-      nonExistingSourceEndId
+      nonExistingSourceEndId,
+      pathToFileWithIds
     )
 
   }

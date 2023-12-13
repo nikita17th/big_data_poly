@@ -1,14 +1,15 @@
+import DownloadData.downloadUsers
 import org.apache.spark.SparkConf
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.dsl.expressions.{DslExpression, StringToAttributeConversionHelper}
 import org.slf4j.LoggerFactory
 
 import java.io.FileInputStream
 import java.util.Properties
-import scala.language.postfixOps
 import scala.reflect.io.File
 
-object Aggregate {
+object DownloadDataFromFile {
+
   private val LOG = LoggerFactory.getLogger(getClass)
 
   def main(args: Array[String]): Unit = {
@@ -19,9 +20,10 @@ object Aggregate {
       properties.load(new FileInputStream("src/conf/config.properties"))
     }
 
-    val config: Config = Config.create(properties)
-    run(config)
+    val downloadDataConfig: Config = Config.create(properties)
+    run(downloadDataConfig)
   }
+
 
   private def run(config: Config): Unit = {
     val conf = new SparkConf()
@@ -38,20 +40,33 @@ object Aggregate {
         .set("spark.driver.extraJavaOptions", " -XX:+UseG1GC")
         .set("spark.executor.extraJavaOptions", " -XX:+UseG1GC")
     }
+    if (config.vkTokens.size > conf.getInt("spark.executor.instances", 1)) {
+      conf.set("spark.executor.instances", config.vkTokens.size.toString)
+    }
 
     val spark: SparkSession = SparkSession.builder()
-      .appName("Aggregate data to one file")
+      .appName("Download users data from vk from file")
       .config(conf)
       .getOrCreate()
+    val sc = spark.sparkContext
 
-    spark
-      .read
-      .parquet(f"${config.aggregationSourceDir}")
-      .filter("id < 837015103")
-      .repartition(32)
-      .sort("id")
-      .dropDuplicates("id")
+    val ids = spark.sparkContext
+      .textFile(config.pathToFileWithIds)
+      .map(str => str.toInt)
+      .collect()
+      .toSeq
+
+    val groupedIds = ids.grouped(config.batchSizeForRequestVkIds).toSeq
+
+    val rdd: RDD[UserData] = downloadUsers(config, sc, groupedIds)
+
+    spark.createDataFrame(rdd)
+      .coalesce(1)
       .write
-      .parquet(f"data_0_0_${config.startTime}")
+      .parquet(config.outPath)
+
+    LOG.info(f"Finish all: ${config.finishId} ids")
+    spark.stop()
   }
+
 }
