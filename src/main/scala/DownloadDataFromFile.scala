@@ -61,7 +61,6 @@ object DownloadDataFromFile {
     val rdd: RDD[UserData] = downloadUsers(config, sc, groupedIds)
 
     spark.createDataFrame(rdd)
-      .coalesce(1)
       .write
       .parquet(config.outPath)
 
