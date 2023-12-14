@@ -39,30 +39,38 @@ object GetNonExistingIds {
         .set("spark.executor.extraJavaOptions", " -XX:+UseG1GC")
     }
 
+    val size = config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1
     val spark: SparkSession = SparkSession.builder()
       .appName(f"Get ids not in range ${config.nonExistingSourceStartId} to ${config.nonExistingSourceEndId}")
       .config(conf)
       .getOrCreate()
     LOG.info(f"${config.nonExistingSourceDir}")
-    val jopa: Array[Boolean] = new Array[Boolean](config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1)
+    val jopa: Array[Boolean] = new Array[Boolean](size)
 
     spark
       .read
       .parquet(f"${config.nonExistingSourceDir}")
       .select("id")
+      .rdd
+      .map(a => a.getInt(0))
       .collect()
-      .map(_.getInt(0))
       .foreach(id => {
-        jopa(id - config.nonExistingSourceStartId) = true
+        if (id - config.nonExistingSourceStartId < size) {
+          jopa(id - config.nonExistingSourceStartId) = true
+        }
       })
+    LOG.info("Processing of existing id is ended")
 
     val collection = ArrayBuffer[Int]()
     var i = 0
     var counter = 0
-    while (i < config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1) {
+    while (i < size) {
       if (!jopa(i)) {
         counter += 1
         collection += (i + config.nonExistingSourceStartId)
+      }
+      if (i % 10000000 == 0) {
+        LOG.info(f"Processed id = $i, counter = $counter")
       }
       i += 1
     }
@@ -71,6 +79,6 @@ object GetNonExistingIds {
       .saveAsTextFile(f"non-existing_${config.startTime}")
 
     LOG.error(f"PIZDEZ RAZMEROM S: $counter")
-    LOG.error(f"${config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1 - counter}")
+    LOG.error(f"${size - counter}")
   }
 }

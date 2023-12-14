@@ -1,6 +1,5 @@
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.dsl.expressions.{DslExpression, StringToAttributeConversionHelper}
+import org.apache.spark.sql.{Encoders, SparkSession}
 import org.slf4j.LoggerFactory
 
 import java.io.FileInputStream
@@ -48,8 +47,7 @@ object Aggregate {
       .read
       .parquet(f"${config.aggregationSourceDir}")
       .filter("id < 837015103")
-      .repartition(32)
-      .sort("id")
+      .coalesce(32)
       .dropDuplicates("id")
       .write
       .parquet(f"data_0_0_${config.startTime}")
