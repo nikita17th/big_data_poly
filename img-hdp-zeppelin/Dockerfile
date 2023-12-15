@@ -93,8 +93,8 @@ RUN wget https://artfiles.org/apache.org/zeppelin/zeppelin-$ZEPPELIN_VERSION/zep
 
 COPY zeppelin-env.sh $ZEPPELIN_HOME/conf/
 
-COPY ../target/scala-2.11/big_data_poly-assembly-0.1.0-SNAPSHOT.jar /home/hduser/
-COPY ../Analytics_VK.zpln /home/hduser/
+COPY big_data_poly-assembly-0.1.0-SNAPSHOT.jar /home/hduser/
+COPY Analytics_VK.zpln /home/hduser/
 
 # set up ports and scripts
 ENV TZ=UTC
