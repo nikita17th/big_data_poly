@@ -48,7 +48,6 @@ object Aggregate {
       .parquet(f"${config.sourceDir}")
       .filter(f"id < ${config.aggregateFilterId}")
       .coalesce(config.countPartitions)
-      .dropDuplicates("id")
       .write
       .parquet(f"data_0_0_${config.startTime}")
   }
