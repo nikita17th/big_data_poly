@@ -90,8 +90,8 @@ docker cp src/conf/config.properties zeppelin:/home/hduser/
 
 В файле `config.properties` важными парамтерами являются:
 ```properties
-download.data.users.start.vk.id = 1                                                            # стартовый id
-download.data.users.count.vk.id = 1000                                                         # количество id 
+data.users.start.vk.id = 1                                                            # стартовый id
+data.users.count.vk.id = 1000                                                         # количество id 
 download.data.vk.tokens = Bearer <token_1>:Bearer <token_2>:Bearer <token_3>:Bearer <token_4>  # ключи для запросов
 download.data.batch.size = 100008                                                              # размер партии для промежуточных сохранений (должен делится на 24)
 ```
