@@ -51,7 +51,7 @@ object DownloadDataFromFile {
     val sc = spark.sparkContext
 
     val ids = spark.sparkContext
-      .textFile(config.pathToFileWithIds)
+      .textFile(config.sourceDir)
       .map(str => str.toInt)
       .collect()
       .toSeq

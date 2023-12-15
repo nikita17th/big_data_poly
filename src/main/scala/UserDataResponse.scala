@@ -16,6 +16,15 @@ case class UserData(id: Int,
                     photos: Option[Seq[Int]],
                     deactivated: Option[String])
 
+case class UserDataExtended(id: Int,
+                            city: Option[City],
+                            country: Option[Country],
+                            first_name: Option[String],
+                            last_name: Option[String],
+                            platform: Option[Int],
+                            is_closed: Option[Boolean],
+                            user_type: Option[Int])
+
 case class LastSeen(time: Long, platform: Option[Int])
 
 case class City(id: Option[Int], title: Option[String])

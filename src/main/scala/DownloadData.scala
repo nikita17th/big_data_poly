@@ -90,7 +90,6 @@ object DownloadData {
       println(s"Deleted file: ${file.getPath}")
     }
 
-
     LOG.info(f"Finish all: ${config.finishId} ids")
     spark.stop()
   }

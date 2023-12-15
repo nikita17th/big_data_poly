@@ -1,9 +1,8 @@
-import ch.qos.logback.classic.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.sql.SparkSession
 import org.slf4j.LoggerFactory
 
-import java.io.{FileInputStream, PrintWriter}
+import java.io.FileInputStream
 import java.util.Properties
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.io.File
@@ -39,24 +38,23 @@ object GetNonExistingIds {
         .set("spark.executor.extraJavaOptions", " -XX:+UseG1GC")
     }
 
-    val size = config.nonExistingSourceEndId - config.nonExistingSourceStartId + 1
+    val size = config.finishId - config.startId + 1
     val spark: SparkSession = SparkSession.builder()
-      .appName(f"Get ids not in range ${config.nonExistingSourceStartId} to ${config.nonExistingSourceEndId}")
+      .appName(f"Get ids not in range ${config.startId} to ${config.finishId}")
       .config(conf)
       .getOrCreate()
-    LOG.info(f"${config.nonExistingSourceDir}")
     val jopa: Array[Boolean] = new Array[Boolean](size)
 
     spark
       .read
-      .parquet(f"${config.nonExistingSourceDir}")
+      .parquet(f"${config.sourceDir}")
       .select("id")
       .rdd
       .map(a => a.getInt(0))
       .collect()
       .foreach(id => {
-        if (id - config.nonExistingSourceStartId < size) {
-          jopa(id - config.nonExistingSourceStartId) = true
+        if (id - config.startId < size) {
+          jopa(id - config.startId) = true
         }
       })
     LOG.info("Processing of existing id is ended")
@@ -67,7 +65,7 @@ object GetNonExistingIds {
     while (i < size) {
       if (!jopa(i)) {
         counter += 1
-        collection += (i + config.nonExistingSourceStartId)
+        collection += (i + config.startId)
       }
       if (i % 10000000 == 0) {
         LOG.info(f"Processed id = $i, counter = $counter")
@@ -78,7 +76,7 @@ object GetNonExistingIds {
     spark.sparkContext.makeRDD(collection, 1)
       .saveAsTextFile(f"non-existing_${config.startTime}")
 
-    LOG.error(f"PIZDEZ RAZMEROM S: $counter")
+    LOG.error(f"Count lost: $counter")
     LOG.error(f"${size - counter}")
   }
 }

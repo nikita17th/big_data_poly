@@ -1,5 +1,5 @@
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{Encoders, SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.slf4j.LoggerFactory
 
 import java.io.FileInputStream
@@ -45,9 +45,9 @@ object Aggregate {
 
     spark
       .read
-      .parquet(f"${config.aggregationSourceDir}")
-      .filter("id < 837015103")
-      .coalesce(32)
+      .parquet(f"${config.sourceDir}")
+      .filter(f"id < ${config.aggregateFilterId}")
+      .coalesce(config.countPartitions)
       .dropDuplicates("id")
       .write
       .parquet(f"data_0_0_${config.startTime}")
