@@ -93,6 +93,9 @@ RUN wget https://artfiles.org/apache.org/zeppelin/zeppelin-$ZEPPELIN_VERSION/zep
 
 COPY zeppelin-env.sh $ZEPPELIN_HOME/conf/
 
+COPY ../target/scala-2.11/big_data_poly-assembly-0.1.0-SNAPSHOT.jar /home/hduser/
+COPY ../Analytics_VK.zpln /home/hduser/
+
 # set up ports and scripts
 ENV TZ=UTC
 ENV PATH $PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin:$SPARK_HOME/bin:$HIVE_HOME/bin:$ZEPPELIN_HOME/bin:/home/hduser/.local/bin

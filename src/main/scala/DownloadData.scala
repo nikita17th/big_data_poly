@@ -1,9 +1,9 @@
 import akka.http.scaladsl.model.HttpHeader
 import akka.http.scaladsl.model.headers.RawHeader
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.{SparkConf, SparkContext}
 import org.slf4j.LoggerFactory
 import spray.json._
 
@@ -61,23 +61,7 @@ object DownloadData {
 
     var counter = 0
     for (batch <- gropedBatches) {
-      val rdd: RDD[UserData] = sc.makeRDD(batch, numSlices = config.vkTokens.size)
-        .mapPartitionsWithIndex { (partitionIndex, part) =>
-          val httpWorker = new HttpWorker(config.requestTimeout,
-            config.maxRetries,
-            config.rateLimit,
-            config.rateLimitDuration)
-
-          val urls = part.map(batchIds => {
-            val strIds = batchIds.mkString(",")
-            s"https://api.vk.com/method/execute.getUsersData?v=${config.apiVersion}&user_ids=$strIds&fields=last_seen,city,country"
-          }).toList
-
-          downloadUserData(urls,
-            config.vkTokens(partitionIndex),
-            httpWorker
-          ).iterator
-        }
+      val rdd: RDD[UserData] = downloadUsers(config, sc, batch)
 
       spark.createDataFrame(rdd)
         .write
@@ -106,16 +90,36 @@ object DownloadData {
       println(s"Deleted file: ${file.getPath}")
     }
 
-
     LOG.info(f"Finish all: ${config.finishId} ids")
     spark.stop()
   }
 
 
-  private def downloadUserData(urls: List[String],
-                               key: String,
-                               httpWorker: HttpWorker
-                              ): List[UserData] = {
+  def downloadUsers(config: Config, sc: SparkContext, batch: Seq[Seq[Int]]): RDD[UserData] = {
+    val rdd: RDD[UserData] = sc.makeRDD(batch, numSlices = config.vkTokens.size)
+      .mapPartitionsWithIndex { (partitionIndex, part) =>
+        val httpWorker = new HttpWorker(config.requestTimeout,
+          config.maxRetries,
+          config.rateLimit,
+          config.rateLimitDuration)
+
+        val urls = part.map(batchIds => {
+          val strIds = batchIds.mkString(",")
+          s"https://api.vk.com/method/execute.getUsersData?v=${config.apiVersion}&user_ids=$strIds&fields=last_seen,city,country"
+        }).toList
+
+        downloadUserData(urls,
+          config.vkTokens(partitionIndex),
+          httpWorker
+        ).iterator
+      }
+    rdd
+  }
+
+  def downloadUserData(urls: List[String],
+                       key: String,
+                       httpWorker: HttpWorker
+                      ): List[UserData] = {
 
     val header: HttpHeader = RawHeader("Authorization", key)
     val bodies: List[String] = httpWorker.makeRequest(urls, header)
